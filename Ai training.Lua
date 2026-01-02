@@ -671,9 +671,13 @@ local function activateAI(character)
 				end
 				
 				for k, v in pairs(feat) do
-					q = q + (weights[k] or 0) * v
-				end
-				
+	q = q + (weights[k] or 0) * v
+end
+
+-- BARE-MINIMUM WALL OVERRIDE (ADD THIS)
+if sensor360.wallInFront then
+	q = q - 50
+end	
 				-- Forward bias when path is clear
 				if (action == "forward" or action == "slight_left" or action == "slight_right") and feat.goalBehind < 1 and feat.clearPathScore > 0.5 then
 					q = q + 2.5
@@ -691,37 +695,52 @@ local function activateAI(character)
 				lastJump = tick()
 			end
 			
--- Execute action with smooth rotation
-			if bestAction == "slight_left" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(12), 0)
-			elseif bestAction == "slight_right" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-12), 0)
-			elseif bestAction == "left" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(22), 0)
-			elseif bestAction == "right" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-22), 0)
-			elseif bestAction == "sharp_left" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(55), 0)
-			elseif bestAction == "sharp_right" then
-				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-55), 0)
-			end
-			
-			-- HYBRID MOVEMENT: Combine vector forces with Q-learning
-			local moveDir = root.CFrame.LookVector
-			
-			-- Add avoidance force influence
-			if sensor360.avoidanceForce.Magnitude > 0.5 then
-				local avoidInfluence = sensor360.avoidanceForce.Unit * 0.3
-				moveDir = (moveDir + avoidInfluence).Unit
-			end
-			
-			-- Apply physics
-			bodyVel.Velocity = moveDir * MOVE_SPEED
-			bodyGyro.CFrame = CFrame.lookAt(root.Position, root.Position + moveDir)
-			humanoid:Move(moveDir, false)
-		end
-	end)
+-- HARD AVOIDANCE OVERRIDE (MUST COME FIRST)
+if sensor360.wallInFront and sensor360.avoidanceForce.Magnitude > 1 then
+	local rightDot = root.CFrame.RightVector:Dot(sensor360.avoidanceForce)
+
+	if rightDot > 0 then
+		bestAction = "sharp_left"
+	else
+		bestAction = "sharp_right"
+	end
 end
+
+-- Execute action with smooth rotation
+if bestAction == "slight_left" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(12), 0)
+elseif bestAction == "slight_right" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-12), 0)
+elseif bestAction == "left" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(22), 0)
+elseif bestAction == "right" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-22), 0)
+elseif bestAction == "sharp_left" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(55), 0)
+elseif bestAction == "sharp_right" then
+	root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-55), 0)
+end
+		
+-- HYBRID MOVEMENT: Combine vector forces with Q-learning
+local moveDir = root.CFrame.LookVector
+
+-- Strong avoidance influence
+if sensor360.avoidanceForce.Magnitude > 0 then
+	local strength = math.clamp(sensor360.avoidanceForce.Magnitude, 0, 8)
+	local avoidDir = sensor360.avoidanceForce.Unit
+	moveDir = (moveDir * 0.4 + avoidDir * strength).Unit
+end
+
+-- FIX #4: Slow down near walls
+local speedMultiplier = 1
+if sensor360.wallInFront then
+	speedMultiplier = 0.6
+end
+
+-- Apply physics
+bodyVel.Velocity = moveDir * MOVE_SPEED * speedMultiplier
+bodyGyro.CFrame = CFrame.lookAt(root.Position, root.Position + moveDir)
+humanoid:Move(moveDir, false)
 
 player.CharacterAdded:Connect(activateAI)
 if player.Character then activateAI(player.Character) end
