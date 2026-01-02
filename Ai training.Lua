@@ -377,96 +377,242 @@ end
 spawnNextGoal()
 
 --====================================================
--- ENHANCED AI BRAIN
+-- ENHANCED AI BRAIN (WITH VERTICALITY)
 --====================================================
-local RAY_DIST = 22 -- Slightly longer vision
+local RAY_DIST = 22 
 local MOVE_FORCE = 28
-local JUMP_COOLDOWN = 0.5
+local JUMP_COOLDOWN = 0.6 -- Increased slightly for stability
 local lastJumpTime = 0
 
 local function activateAI(character)
-	local root = character:WaitForChild("HumanoidRootPart")
-	local humanoid = character:WaitForChild("Humanoid")
-	
-	humanoid.WalkSpeed = 22
-	
-	humanoid.Seated:Connect(function(active)
-		if active then humanoid.Jump = true end
-	end)
-	
-	local bodyVel = Instance.new("BodyVelocity")
-	bodyVel.MaxForce = Vector3.new(100000, 0, 100000)
-	bodyVel.P = 10000
-	bodyVel.Parent = root
-	
-	local isAlive = true
-	local stuckPos = root.Position
-	local stuckTimer = 0
-	local lastPosition = root.Position
-	local velocityHistory = {}
-	
-	humanoid.Died:Connect(function()
-		isAlive = false
-		stats.deaths += 1
-		deathLabel.Text = "Deaths: " .. stats.deaths
-		if currentGoal and currentGoal.Parent then
-			recordDeath(root.Position, currentGoal.Position)
-		end
-	end)
-	
-	task.spawn(function()
-		while isAlive and character.Parent do
-			local dt = task.wait(0.04) -- Faster tick rate
-			
-			if not currentGoal or not currentGoal.Parent then
-				bodyVel.Velocity = Vector3.zero
-				continue
-			end
-			
-			local elapsed = tick() - stats.goalSpawnTime
-			timerLabel.Text = "Goal Timer: " .. math.ceil(GOAL_TIMEOUT - elapsed) .. "s"
-			
-			if elapsed >= GOAL_TIMEOUT then
-				showPopup("UNREACHABLE - REROUTING", 2, Color3.fromRGB(255, 150, 0))
-				spawnNextGoal()
-				continue
-			end
-			
-			pathUpdateCooldown = pathUpdateCooldown - dt
-			if pathUpdateCooldown <= 0 then
-				pathUpdateCooldown = PATH_UPDATE_INTERVAL
-				updatePathHint(root.Position, currentGoal.Position)
-			end
-			
-			-- Enhanced stuck detection with velocity tracking
-			table.insert(velocityHistory, root.AssemblyLinearVelocity.Magnitude)
-			if #velocityHistory > 10 then
-				table.remove(velocityHistory, 1)
-			end
-			
-			local avgVelocity = 0
-			for _, v in ipairs(velocityHistory) do
-				avgVelocity = avgVelocity + v
-			end
-			avgVelocity = avgVelocity / #velocityHistory
-			
-			if (root.Position - stuckPos).Magnitude < 1.5 or avgVelocity < 2 then
-				stuckTimer = stuckTimer + dt
-				
-				if stuckTimer > 0.5 and tick() - lastJumpTime > JUMP_COOLDOWN then
-					humanoid.Jump = true
-					lastJumpTime = tick()
-				end
-				
-				if stuckTimer > 1.5 then
-					root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(math.random(90, 180)), 0)
-					stuckTimer = 0
-				end
-			else
-				stuckTimer = 0
-				stuckPos = root.Position
-			end
+    local root = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    humanoid.WalkSpeed = 22
+    
+    -- Auto-jump when seated or swimming to avoid getting stuck
+    humanoid.Seated:Connect(function(active)
+        if active then humanoid.Jump = true end
+    end)
+    
+    -- PHYSICS SETUP: 
+    -- MaxForce Y is 0 so gravity still works (allows jumping)
+    local bodyVel = Instance.new("BodyVelocity")
+    bodyVel.MaxForce = Vector3.new(100000, 0, 100000) 
+    bodyVel.P = 10000
+    bodyVel.Parent = root
+    
+    local isAlive = true
+    local stuckPos = root.Position
+    local stuckTimer = 0
+    local velocityHistory = {}
+    
+    humanoid.Died:Connect(function()
+        isAlive = false
+        stats.deaths += 1
+        deathLabel.Text = "Deaths: " .. stats.deaths
+        if currentGoal and currentGoal.Parent then
+            recordDeath(root.Position, currentGoal.Position)
+        end
+    end)
+    
+    task.spawn(function()
+        while isAlive and character.Parent do
+            local dt = task.wait(0.04) 
+            
+            if not currentGoal or not currentGoal.Parent then
+                bodyVel.Velocity = Vector3.zero
+                continue
+            end
+            
+            -- UI Updates
+            local elapsed = tick() - stats.goalSpawnTime
+            timerLabel.Text = "Goal Timer: " .. math.ceil(GOAL_TIMEOUT - elapsed) .. "s"
+            
+            if elapsed >= GOAL_TIMEOUT then
+                showPopup("UNREACHABLE - REROUTING", 2, Color3.fromRGB(255, 150, 0))
+                spawnNextGoal()
+                continue
+            end
+            
+            -- Pathfinding Updates
+            pathUpdateCooldown = pathUpdateCooldown - dt
+            if pathUpdateCooldown <= 0 then
+                pathUpdateCooldown = PATH_UPDATE_INTERVAL
+                updatePathHint(root.Position, currentGoal.Position)
+            end
+            
+            -- STUCK DETECTION
+            table.insert(velocityHistory, root.AssemblyLinearVelocity.Magnitude)
+            if #velocityHistory > 10 then table.remove(velocityHistory, 1) end
+            
+            local avgVelocity = 0
+            for _, v in ipairs(velocityHistory) do avgVelocity = avgVelocity + v end
+            avgVelocity = avgVelocity / #velocityHistory
+            
+            if (root.Position - stuckPos).Magnitude < 1.5 or avgVelocity < 2 then
+                stuckTimer = stuckTimer + dt
+                -- Stuck logic: Jump if stuck for a bit
+                if stuckTimer > 0.5 and tick() - lastJumpTime > JUMP_COOLDOWN then
+                    humanoid.Jump = true
+                    lastJumpTime = tick()
+                end
+                if stuckTimer > 1.5 then
+                    -- Random spin to unstuck
+                    root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(math.random(90, 180)), 0)
+                    stuckTimer = 0
+                end
+            else
+                stuckTimer = 0
+                stuckPos = root.Position
+            end
 
+            -- =============================================
+            -- NEW SENSOR SYSTEM (HEIGHT AWARENESS)
+            -- =============================================
+            local function getFeatures(pos, dir)
+                local dist = (pos - currentGoal.Position).Magnitude
+                local toGoal = (currentGoal.Position - pos).Unit
+                local goalAngle = dir:Dot(toGoal)
+                
+                -- Vertical Difference (Is target above/below?)
+                local yDiff = currentGoal.Position.Y - pos.Y
+                
+                -- Raycast Params
+                local rayParams = RaycastParams.new()
+                rayParams.FilterDescendantsInstances = {character, goalFolder}
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+                -- Horizontal Wall Sensors
+                local function cast(ang)
+                    local rDir = (CFrame.new(Vector3.zero, dir) * CFrame.Angles(0, ang, 0)).LookVector
+                    local res = workspace:Raycast(pos, rDir * RAY_DIST, rayParams)
+                    return res and (1 - (res.Distance / RAY_DIST)) or 0
+                end
+                
+                -- NEW: Floor/Gap Sensor (Looks diagonally down in front)
+                local function checkGap(ang)
+                    -- Look 6 studs ahead, then cast DOWN
+                    local forwardOffset = (CFrame.new(Vector3.zero, dir) * CFrame.Angles(0, ang, 0)).LookVector * 6
+                    local rayOrigin = pos + forwardOffset
+                    -- Cast down 50 studs
+                    local res = workspace:Raycast(rayOrigin, Vector3.new(0, -50, 0), rayParams)
+                    
+                    if res then
+                        return 0 -- Floor exists
+                    else
+                        return 1 -- GAP DETECTED (Danger!)
+                    end
+                end
+
+                return {
+                    goalDist = 100 / (dist + 10),
+                    goalAngle = goalAngle,
+                    goalBehind = goalAngle < -0.7 and 1 or 0,
+                    
+                    -- Wall Sensors
+                    wallFront = cast(0),
+                    wallLeft = cast(math.rad(-30)),
+                    wallRight = cast(math.rad(30)),
+                    
+                    -- Gap Sensors (NEW)
+                    gapFront = checkGap(0),
+                    gapLeft = checkGap(math.rad(-30)),
+                    gapRight = checkGap(math.rad(30)),
+                    
+                    -- Vertical Sensor (NEW)
+                    targetAbove = yDiff > 3 and 1 or 0, -- Target is high
+                    targetBelow = yDiff < -3 and 1 or 0, -- Target is low
+                    
+                    momentum = avgVelocity / 22
+                }
+            end
+            
+            -- DECISION MAKING
+            local currentDir = root.CFrame.LookVector
+            local feat = getFeatures(root.Position, currentDir)
+
+            -- 1. JUMP LOGIC (Priority)
+            local shouldJump = false
+            
+            -- Jump if there is a gap ahead (Obby logic)
+            if feat.gapFront > 0 then 
+                shouldJump = true 
+            end
+            
+            -- Jump if target is high up and we are hitting a wall (Climbing logic)
+            if feat.targetAbove > 0 and feat.wallFront > 0.5 then
+                shouldJump = true
+            end
+
+            -- Execute Jump
+            if shouldJump and tick() - lastJumpTime > JUMP_COOLDOWN then
+                humanoid.Jump = true
+                lastJumpTime = tick()
+            end
+
+            -- 2. MOVEMENT LOGIC (Weights)
+            -- We want to avoid walls AND avoid gaps
+            local weights = {
+                goalAngle = 4.0,     -- Desire to face goal
+                wallFront = -15.0,   -- Hate walls
+                gapFront = -20.0,    -- HATE GAPS (Don't walk off edges)
+                wallLeft = -2.0,
+                wallRight = -2.0,
+                gapLeft = -5.0,      -- Dislike gaps on sides
+                gapRight = -5.0
+            }
+
+            local actions = {"forward", "left", "right", "slight_left", "slight_right"}
+            local bestAction = "forward"
+            local maxQ = -math.huge
+            
+            -- Evaluate best direction
+            for _, action in ipairs(actions) do
+                local nextDir = currentDir
+                local nextPos = root.Position
+                
+                -- Simulate direction
+                if action == "forward" then
+                    nextPos = nextPos + (nextDir * 6)
+                elseif action == "left" then
+                    nextDir = (CFrame.new(Vector3.zero, nextDir) * CFrame.Angles(0, math.rad(45), 0)).LookVector
+                    nextPos = nextPos + (nextDir * 4)
+                elseif action == "right" then
+                    nextDir = (CFrame.new(Vector3.zero, nextDir) * CFrame.Angles(0, math.rad(-45), 0)).LookVector
+                    nextPos = nextPos + (nextDir * 4)
+                -- (Add slight turns similarly if desired)
+                end
+                
+                -- Get simulated features for that future position
+                local simFeat = getFeatures(nextPos, nextDir)
+                local q = 0
+                
+                -- Calculate Score
+                for k, v in pairs(simFeat) do
+                    if weights[k] then
+                        q = q + (weights[k] * v)
+                    end
+                end
+                
+                if q > maxQ then
+                    maxQ = q
+                    bestAction = action
+                end
+            end
+            
+            -- APPLY MOVEMENT
+            if bestAction == "left" then
+                root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(15), 0)
+            elseif bestAction == "right" then
+                root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-15), 0)
+            end
+            
+            -- Move forward
+            bodyVel.Velocity = root.CFrame.LookVector * MOVE_FORCE
+        end
+    end)
+end
 			-- ENHANCED SENSOR SYSTEM
 			local function getFeatures(pos, dir)
 				local dist = (pos - currentGoal.Position).Magnitude
