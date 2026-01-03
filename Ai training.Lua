@@ -478,6 +478,21 @@ local function activateAI(character)
 	-- Q-LEARNING SYSTEM (From Script 2)
 	--====================================================
 	local function getQFeatures(pos, dir, sensor360)
+	  	if not currentGoal or not currentGoal.Parent then
+		return {
+			goalDist = 0,
+			goalAngle = 0,
+			pathAngle = 0,
+			successAngle = 0,
+			goalBehind = 0,
+			goalRight = 0,
+			wallFront = 0,
+			avoidanceStrength = 0,
+			clearPathScore = 0,
+			gapAhead = 0,
+			dangerPenalty = 0
+		}
+	end
 		local dist = (pos - currentGoal.Position).Magnitude
 		local toGoal = (currentGoal.Position - pos).Unit
 		local goalAngle = dir:Dot(toGoal)
@@ -741,8 +756,11 @@ end
 bodyVel.Velocity = moveDir * MOVE_SPEED * speedMultiplier
 bodyGyro.CFrame = CFrame.lookAt(root.Position, root.Position + moveDir)
 humanoid:Move(moveDir, false)
+end
 
 player.CharacterAdded:Connect(activateAI)
-if player.Character then activateAI(player.Character) end
+if player.Character then
+    activateAI(player.Character)
+end
 
 print("ðŸš€ ULTIMATE AI: 360Â° LIDAR + Q-Learning + Advanced Memory!")
