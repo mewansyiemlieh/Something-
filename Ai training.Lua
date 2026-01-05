@@ -1,5 +1,5 @@
 --====================================================
--- AI TRAINING - 100 GOALS (OPTIMIZED MERGE)
+-- AI TRAINING - 100 GOALS (ENHANCED VERSION)
 --====================================================
 
 local Players = game:GetService("Players")
@@ -23,28 +23,24 @@ local stats = {
 	avgTimePerGoal = 0
 }
 
--- Streak tracking
-local streak = 0
-local lastDeathCount = 0
-
 --====================================================
 -- ENHANCED LEARNING SYSTEM
 --====================================================
 local dangerZones = {}
 local pathMemory = {}
-local successfulPaths = {}
-local recoveryMoves = {}
+local successfulPaths = {} -- NEW: Track successful routes
 local currentGoalID = 0
-local MAX_DANGER_HISTORY = 50
+local MAX_DANGER_HISTORY = 50 -- Limit memory size
 
 local function recordDeath(position, goalPosition)
 	table.insert(dangerZones, {
 		pos = position,
 		goal = goalPosition,
 		time = tick(),
-		severity = 1
+		severity = 1 -- Can be increased for repeated deaths in same area
 	})
 	
+	-- Limit danger zone memory
 	if #dangerZones > MAX_DANGER_HISTORY then
 		table.remove(dangerZones, 1)
 	end
@@ -57,22 +53,11 @@ local function recordDeath(position, goalPosition)
 		direction = (goalPosition - position).Unit
 	})
 	
-	print("ðŸ’€ Death recorded at", position)
-	
-	-- Visualize danger zone
-	local marker = Instance.new("Part")
-	marker.Size = Vector3.new(8, 0.5, 8)
-	marker.Position = position
-	marker.Color = Color3.fromRGB(255, 0, 0)
-	marker.Transparency = 0.7
-	marker.CanCollide = false
-	marker.Anchored = true
-	marker.Material = Enum.Material.Neon
-	marker.Parent = workspace:FindFirstChild("AIGoals") or workspace
-	Debris:AddItem(marker, 10)
+	print("💀 Death recorded at", position)
 end
 
 local function recordSuccess(startPos, goalPos)
+	-- NEW: Learn from successful paths
 	table.insert(successfulPaths, {
 		start = startPos,
 		goal = goalPos,
@@ -87,6 +72,7 @@ end
 local function isDangerousPath(startPos, targetPos)
 	local dangerScore = 0
 	
+	-- Check recent deaths
 	for i = #dangerZones, math.max(1, #dangerZones - 20), -1 do
 		local zone = dangerZones[i]
 		local distToZone = (startPos - zone.pos).Magnitude
@@ -97,6 +83,7 @@ local function isDangerousPath(startPos, targetPos)
 		end
 	end
 	
+	-- Check path memory
 	for goalID, failures in pairs(pathMemory) do
 		for _, failure in ipairs(failures) do
 			local currentDir = (targetPos - startPos).Unit
@@ -115,6 +102,7 @@ local function isDangerousPath(startPos, targetPos)
 end
 
 local function hasSuccessfulRoute(startPos, goalPos)
+	-- NEW: Check if we've successfully navigated similar routes
 	for _, path in ipairs(successfulPaths) do
 		local startSimilarity = (startPos - path.start).Magnitude
 		local goalSimilarity = (goalPos - path.goal).Magnitude
@@ -126,22 +114,12 @@ local function hasSuccessfulRoute(startPos, goalPos)
 	return false, nil
 end
 
-local function findRecoveryMove(currentPos)
-	for i = #recoveryMoves, math.max(1, #recoveryMoves - 10), -1 do
-		local recovery = recoveryMoves[i]
-		if (currentPos - recovery.stuckPos).Magnitude < 15 then
-			return recovery.rotationUsed
-		end
-	end
-	return nil
-end
-
 --====================================================
 -- ENHANCED PATHFINDING SYSTEM
 --====================================================
 local currentPath = nil
 local pathUpdateCooldown = 0
-local PATH_UPDATE_INTERVAL = 1.5
+local PATH_UPDATE_INTERVAL = 1.5 -- Faster updates
 local lastPathPosition = nil
 
 local function getPathHint(startPos, goalPos)
@@ -150,14 +128,16 @@ local function getPathHint(startPos, goalPos)
 	local waypoints = currentPath:GetWaypoints()
 	if #waypoints < 2 then return nil, 0 end
 	
+	-- Find the optimal waypoint to target
 	local bestWaypoint = nil
 	local bestDist = math.huge
 	local waypointIndex = 1
 	
-	for i = 2, math.min(#waypoints, 8) do
+	for i = 2, math.min(#waypoints, 8) do -- Look further ahead
 		local wp = waypoints[i]
 		local dist = (wp.Position - startPos).Magnitude
 		
+		-- Prefer waypoints that are 5-15 units ahead
 		if dist > 5 and dist < 15 and dist < bestDist then
 			bestDist = dist
 			bestWaypoint = wp.Position
@@ -175,6 +155,7 @@ local function getPathHint(startPos, goalPos)
 end
 
 local function updatePathHint(startPos, goalPos)
+	-- Only update if we've moved significantly
 	if lastPathPosition and (startPos - lastPathPosition).Magnitude < 8 then
 		return
 	end
@@ -187,7 +168,7 @@ local function updatePathHint(startPos, goalPos)
 				AgentRadius = 2,
 				AgentHeight = 5,
 				AgentCanJump = true,
-				WaypointSpacing = 3,
+				WaypointSpacing = 3, -- More granular waypoints
 				Costs = {
 					Water = math.huge,
 					Danger = math.huge
@@ -237,7 +218,6 @@ local timeLabel = createLabel("Time: 0s", UDim2.new(0, 10, 0, 110))
 local deathLabel = createLabel("Deaths: 0", UDim2.new(0, 10, 0, 160))
 local timerLabel = createLabel("Goal Timer: 78s", UDim2.new(0, 10, 0, 210), Color3.fromRGB(255, 255, 100))
 local avgLabel = createLabel("Avg: 0s/goal", UDim2.new(0, 10, 0, 260), Color3.fromRGB(150, 255, 150))
-local streakLabel = createLabel("Streak: 0", UDim2.new(0, 10, 0, 310), Color3.fromRGB(255, 150, 0))
 
 local popup = Instance.new("TextLabel")
 popup.Size = UDim2.new(0, 400, 0, 50)
@@ -289,7 +269,7 @@ local function spawnNextGoal()
 	lastPathPosition = nil
 	
 	if stats.goalsCollected >= stats.totalGoals then
-		timeLabel.Text = "ðŸ† FINAL TIME: " .. (math.floor(tick() - stats.startTime)) .. "s"
+		timeLabel.Text = "🏆 FINAL TIME: " .. (math.floor(tick() - stats.startTime)) .. "s"
 		task.wait(1)
 		player:Kick("Training Complete! Goals: 100 | Deaths: " .. stats.deaths .. " | Time: " .. (math.floor(tick() - stats.startTime)) .. "s")
 		return
@@ -320,7 +300,7 @@ local function spawnNextGoal()
 	repeat
 		attempts = attempts + 1
 		local angle = math.random() * 2 * math.pi
-		local distance = math.random(35, 110)
+		local distance = math.random(35, 110) -- Slightly adjusted range
 		local searchPos = origin + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 		
 		local params = RaycastParams.new()
@@ -342,7 +322,7 @@ local function spawnNextGoal()
 			end
 			
 			if isDangerous and attempts < maxAttempts then
-				rayResult = nil
+				rayResult = nil -- Try again
 			end
 		end
 		task.wait()
@@ -367,24 +347,10 @@ local function spawnNextGoal()
 			
 			local goalTime = tick() - goalStartTime
 			stats.goalsCollected += 1
-			stats.score += math.max(5, 15 - math.floor(goalTime / 5))
+			stats.score += math.max(5, 15 - math.floor(goalTime / 5)) -- Bonus for speed
 			
 			scoreLabel.Text = "Score: " .. stats.score
 			goalsLabel.Text = "Goals: " .. stats.goalsCollected .. "/" .. stats.totalGoals
-			
-			-- Streak system
-			if stats.deaths == lastDeathCount then
-				streak = streak + 1
-				if streak >= 3 then
-					local streakBonus = 5 * streak
-					stats.score += streakBonus
-					showPopup(string.format("ðŸ”¥ STREAK x%d! (+%d bonus)", streak, streakBonus), 1.5, Color3.fromRGB(255, 150, 0))
-				end
-			else
-				streak = 0
-			end
-			lastDeathCount = stats.deaths
-			streakLabel.Text = "Streak: " .. streak
 			
 			if root then
 				recordSuccess(root.Position, finalPos)
@@ -411,9 +377,9 @@ end
 spawnNextGoal()
 
 --====================================================
--- ENHANCED AI BRAIN (OPTIMIZED)
+-- ENHANCED AI BRAIN
 --====================================================
-local RAY_DIST = 22
+local RAY_DIST = 22 -- Slightly longer vision
 local MOVE_FORCE = 28
 local JUMP_COOLDOWN = 0.5
 local lastJumpTime = 0
@@ -443,8 +409,6 @@ local function activateAI(character)
 		isAlive = false
 		stats.deaths += 1
 		deathLabel.Text = "Deaths: " .. stats.deaths
-		streak = 0
-		streakLabel.Text = "Streak: 0"
 		if currentGoal and currentGoal.Parent then
 			recordDeath(root.Position, currentGoal.Position)
 		end
@@ -452,7 +416,7 @@ local function activateAI(character)
 	
 	task.spawn(function()
 		while isAlive and character.Parent do
-			local dt = task.wait(0.04)
+			local dt = task.wait(0.04) -- Faster tick rate
 			
 			if not currentGoal or not currentGoal.Parent then
 				bodyVel.Velocity = Vector3.zero
@@ -474,7 +438,7 @@ local function activateAI(character)
 				updatePathHint(root.Position, currentGoal.Position)
 			end
 			
-			-- Enhanced velocity tracking
+			-- Enhanced stuck detection with velocity tracking
 			table.insert(velocityHistory, root.AssemblyLinearVelocity.Magnitude)
 			if #velocityHistory > 10 then
 				table.remove(velocityHistory, 1)
@@ -486,17 +450,6 @@ local function activateAI(character)
 			end
 			avgVelocity = avgVelocity / #velocityHistory
 			
-			-- Adaptive speed based on danger (subtle adjustment)
-			local _, dangerScore = isDangerousPath(root.Position, currentGoal.Position)
-			if dangerScore > 3 then
-				humanoid.WalkSpeed = 18
-			elseif avgVelocity > 18 then
-				humanoid.WalkSpeed = 24
-			else
-				humanoid.WalkSpeed = 22
-			end
-			
-			-- Enhanced stuck detection
 			if (root.Position - stuckPos).Magnitude < 1.5 or avgVelocity < 2 then
 				stuckTimer = stuckTimer + dt
 				
@@ -506,20 +459,7 @@ local function activateAI(character)
 				end
 				
 				if stuckTimer > 1.5 then
-					local recoveryRotation = findRecoveryMove(root.Position)
-					local rotation = recoveryRotation or math.random(90, 180)
-					
-					root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(rotation), 0)
-					
-					table.insert(recoveryMoves, {
-						stuckPos = root.Position,
-						rotationUsed = rotation,
-						workedTime = tick()
-					})
-					if #recoveryMoves > 20 then
-						table.remove(recoveryMoves, 1)
-					end
-					
+					root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(math.random(90, 180)), 0)
 					stuckTimer = 0
 				end
 			else
@@ -527,19 +467,7 @@ local function activateAI(character)
 				stuckPos = root.Position
 			end
 
-			-- Adaptive ray distance
-			local dynamicRayDist = RAY_DIST + math.min(avgVelocity * 0.3, 8)
-			
-			-- Adaptive move force based on distance
-			local distToGoal = (root.Position - currentGoal.Position).Magnitude
-			local currentMoveForce = MOVE_FORCE
-			if distToGoal > 80 then
-				currentMoveForce = 32
-			elseif distToGoal < 20 then
-				currentMoveForce = 24
-			end
-
-			-- SENSOR SYSTEM
+			-- ENHANCED SENSOR SYSTEM
 			local function getFeatures(pos, dir)
 				local dist = (pos - currentGoal.Position).Magnitude
 				local toGoal = (currentGoal.Position - pos).Unit
@@ -557,10 +485,6 @@ local function activateAI(character)
 					successAngle = dir:Dot(successDir)
 				end
 				
-				-- Altitude awareness
-				local goalHeight = math.clamp((currentGoal.Position.Y - pos.Y) / 10, -2, 2)
-				local onGround = humanoid.FloorMaterial ~= Enum.Material.Air
-				
 				local goalBehind = goalAngle < -0.7 and 1 or 0
 				local rightVec = root.CFrame.RightVector
 				local goalRight = rightVec:Dot(toGoal)
@@ -570,23 +494,14 @@ local function activateAI(character)
 				
 				local function cast(ang)
 					local rDir = (CFrame.new(Vector3.zero, dir) * CFrame.Angles(0, ang, 0)).LookVector
-					local res = workspace:Raycast(pos, rDir * dynamicRayDist, rayParams)
-					return res and (1 - (res.Distance / dynamicRayDist)) or 0
+					local res = workspace:Raycast(pos, rDir * RAY_DIST, rayParams)
+					return res and (1 - (res.Distance / RAY_DIST)) or 0
 				end
-				
-				-- Direct line of sight (corner cutting)
-				local directToGoal = (currentGoal.Position - pos).Unit
-				local directRay = workspace:Raycast(pos, directToGoal * math.min(dynamicRayDist, dist * 0.9), rayParams)
-				local canSeeGoal = not directRay or directRay.Distance > dist * 0.7
 				
 				local isDangerous, dangerScore = isDangerousPath(pos, currentGoal.Position)
 				
 				local clearLeft = cast(math.rad(-45)) < 0.25 and 1 or 0
 				local clearRight = cast(math.rad(45)) < 0.25 and 1 or 0
-				
-				-- Jump detection
-				local frontRay = workspace:Raycast(pos, dir * 8, rayParams)
-				local shouldJump = frontRay and frontRay.Position.Y > pos.Y + 2 and onGround
 				
 				return {
 					goalDist = 100 / (dist + 10),
@@ -602,33 +517,27 @@ local function activateAI(character)
 					wallFarRight = cast(math.rad(60)),
 					clearLeft = clearLeft,
 					clearRight = clearRight,
-					dangerPenalty = math.min(dangerScore * 0.7, 2.5),
-					momentum = avgVelocity / 22,
-					goalHeight = goalHeight,
-					canSeeGoal = canSeeGoal and 1 or 0,
-					needsJump = shouldJump and 1 or 0
+					dangerPenalty = math.min(dangerScore, 3),
+					momentum = avgVelocity / 22
 				}
 			end
 			
-			-- Balanced weights (less aggressive features)
+			-- Enhanced weights
 			local weights = {
-				goalDist = 4.0,
-				goalAngle = 3.5,
-				pathAngle = 2.8,
-				successAngle = 2.2,
+				goalDist = 3.8,
+				goalAngle = 3.2,
+				pathAngle = 3.0,
+				successAngle = 2.5,
 				goalBehind = -6.0,
-				wallFront = -12.0,
+				wallFront = -14.0,
 				wallLeft = -1.5,
 				wallRight = -1.5,
 				wallFarLeft = -0.5,
 				wallFarRight = -0.5,
-				clearLeft = 5.5,
-				clearRight = 5.5,
-				dangerPenalty = -6.0,
-				momentum = 1.2,
-				goalHeight = 1.5,
-				canSeeGoal = 7.0,
-				needsJump = 6.0
+				clearLeft = 6.0,
+				clearRight = 6.0,
+				dangerPenalty = -8.0,
+				momentum = 1.5
 			}
 
 			local actions = {"forward", "left", "right", "sharp_left", "sharp_right", "slight_left", "slight_right"}
@@ -683,29 +592,13 @@ local function activateAI(character)
 					end
 				end
 				
-				-- Corner cutting bonus (reduced impact)
-				if feat.canSeeGoal > 0 and action == "forward" then
-					q = q + 6.0
-				end
-				
-				-- Momentum preservation (reduced penalty)
-				local turnAngle = 0
-				if action:find("sharp") then 
-					turnAngle = 70 
-				elseif action:find("left") or action:find("right") then 
-					turnAngle = 30 
-				end
-				local momentumLoss = (turnAngle / 90) * avgVelocity
-				q = q - momentumLoss * 0.3
-				
-				-- Apply all feature weights
 				for k, v in pairs(feat) do
 					q = q + (weights[k] or 0) * v
 				end
 				
 				-- Forward bias when path is clear
 				if (action == "forward" or action == "slight_left" or action == "slight_right") and feat.goalBehind < 1 then
-					q = q + 3.0
+					q = q + 2.5
 				end
 				
 				if q > maxQ then
@@ -729,7 +622,7 @@ local function activateAI(character)
 				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-55), 0)
 			end
 			
-			bodyVel.Velocity = root.CFrame.LookVector * currentMoveForce
+			bodyVel.Velocity = root.CFrame.LookVector * MOVE_FORCE
 			humanoid:Move(root.CFrame.LookVector, false)
 			
 			lastPosition = root.Position
@@ -740,4 +633,4 @@ end
 player.CharacterAdded:Connect(activateAI)
 if player.Character then activateAI(player.Character) end
 
-print("ðŸ¤– AI Master - Optimized Merge: All Features + Reliable Goal-Seeking!")
+print("🤖 AI Master Enhanced: Better Learning + Smoother Navigation!")
