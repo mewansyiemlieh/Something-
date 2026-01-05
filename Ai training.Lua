@@ -1,5 +1,5 @@
 --====================================================
--- AI TRAINING - 100 GOALS (ENHANCED VERSION + ADDITIONS)
+-- AI TRAINING - 100 GOALS (OPTIMIZED MERGE)
 --====================================================
 
 local Players = game:GetService("Players")
@@ -23,7 +23,7 @@ local stats = {
 	avgTimePerGoal = 0
 }
 
--- NEW: Streak tracking
+-- Streak tracking
 local streak = 0
 local lastDeathCount = 0
 
@@ -33,7 +33,7 @@ local lastDeathCount = 0
 local dangerZones = {}
 local pathMemory = {}
 local successfulPaths = {}
-local recoveryMoves = {} -- NEW: Remember successful unstuck moves
+local recoveryMoves = {}
 local currentGoalID = 0
 local MAX_DANGER_HISTORY = 50
 
@@ -57,9 +57,9 @@ local function recordDeath(position, goalPosition)
 		direction = (goalPosition - position).Unit
 	})
 	
-	print("💀 Death recorded at", position)
+	print("ðŸ’€ Death recorded at", position)
 	
-	-- NEW: Visualize danger zone
+	-- Visualize danger zone
 	local marker = Instance.new("Part")
 	marker.Size = Vector3.new(8, 0.5, 8)
 	marker.Position = position
@@ -126,7 +126,6 @@ local function hasSuccessfulRoute(startPos, goalPos)
 	return false, nil
 end
 
--- NEW: Find similar recovery moves
 local function findRecoveryMove(currentPos)
 	for i = #recoveryMoves, math.max(1, #recoveryMoves - 10), -1 do
 		local recovery = recoveryMoves[i]
@@ -238,7 +237,7 @@ local timeLabel = createLabel("Time: 0s", UDim2.new(0, 10, 0, 110))
 local deathLabel = createLabel("Deaths: 0", UDim2.new(0, 10, 0, 160))
 local timerLabel = createLabel("Goal Timer: 78s", UDim2.new(0, 10, 0, 210), Color3.fromRGB(255, 255, 100))
 local avgLabel = createLabel("Avg: 0s/goal", UDim2.new(0, 10, 0, 260), Color3.fromRGB(150, 255, 150))
-local streakLabel = createLabel("Streak: 0", UDim2.new(0, 10, 0, 310), Color3.fromRGB(255, 150, 0)) -- NEW
+local streakLabel = createLabel("Streak: 0", UDim2.new(0, 10, 0, 310), Color3.fromRGB(255, 150, 0))
 
 local popup = Instance.new("TextLabel")
 popup.Size = UDim2.new(0, 400, 0, 50)
@@ -290,7 +289,7 @@ local function spawnNextGoal()
 	lastPathPosition = nil
 	
 	if stats.goalsCollected >= stats.totalGoals then
-		timeLabel.Text = "🏆 FINAL TIME: " .. (math.floor(tick() - stats.startTime)) .. "s"
+		timeLabel.Text = "ðŸ† FINAL TIME: " .. (math.floor(tick() - stats.startTime)) .. "s"
 		task.wait(1)
 		player:Kick("Training Complete! Goals: 100 | Deaths: " .. stats.deaths .. " | Time: " .. (math.floor(tick() - stats.startTime)) .. "s")
 		return
@@ -333,6 +332,7 @@ local function spawnNextGoal()
 		if rayResult then
 			finalPos = rayResult.Position + Vector3.new(0, 2, 0)
 			
+			-- Avoid spawning in known danger zones
 			local isDangerous = false
 			for _, zone in ipairs(dangerZones) do
 				if (finalPos - zone.pos).Magnitude < 15 then
@@ -372,13 +372,13 @@ local function spawnNextGoal()
 			scoreLabel.Text = "Score: " .. stats.score
 			goalsLabel.Text = "Goals: " .. stats.goalsCollected .. "/" .. stats.totalGoals
 			
-			-- NEW: Streak system
+			-- Streak system
 			if stats.deaths == lastDeathCount then
 				streak = streak + 1
 				if streak >= 3 then
 					local streakBonus = 5 * streak
 					stats.score += streakBonus
-					showPopup(string.format("🔥 STREAK x%d! (+%d bonus)", streak, streakBonus), 1.5, Color3.fromRGB(255, 150, 0))
+					showPopup(string.format("ðŸ”¥ STREAK x%d! (+%d bonus)", streak, streakBonus), 1.5, Color3.fromRGB(255, 150, 0))
 				end
 			else
 				streak = 0
@@ -411,7 +411,7 @@ end
 spawnNextGoal()
 
 --====================================================
--- ENHANCED AI BRAIN WITH ADDITIONS
+-- ENHANCED AI BRAIN (OPTIMIZED)
 --====================================================
 local RAY_DIST = 22
 local MOVE_FORCE = 28
@@ -443,7 +443,7 @@ local function activateAI(character)
 		isAlive = false
 		stats.deaths += 1
 		deathLabel.Text = "Deaths: " .. stats.deaths
-		streak = 0 -- NEW: Reset streak on death
+		streak = 0
 		streakLabel.Text = "Streak: 0"
 		if currentGoal and currentGoal.Parent then
 			recordDeath(root.Position, currentGoal.Position)
@@ -486,12 +486,12 @@ local function activateAI(character)
 			end
 			avgVelocity = avgVelocity / #velocityHistory
 			
-			-- NEW: Adaptive speed based on danger
+			-- Adaptive speed based on danger (subtle adjustment)
 			local _, dangerScore = isDangerousPath(root.Position, currentGoal.Position)
-			if dangerScore > 2 then
-				humanoid.WalkSpeed = 16 -- Slow in dangerous areas
+			if dangerScore > 3 then
+				humanoid.WalkSpeed = 18
 			elseif avgVelocity > 18 then
-				humanoid.WalkSpeed = 24 -- Speed up when clear
+				humanoid.WalkSpeed = 24
 			else
 				humanoid.WalkSpeed = 22
 			end
@@ -506,13 +506,11 @@ local function activateAI(character)
 				end
 				
 				if stuckTimer > 1.5 then
-					-- NEW: Try to use remembered recovery move
 					local recoveryRotation = findRecoveryMove(root.Position)
 					local rotation = recoveryRotation or math.random(90, 180)
 					
 					root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(rotation), 0)
 					
-					-- Record this recovery attempt
 					table.insert(recoveryMoves, {
 						stuckPos = root.Position,
 						rotationUsed = rotation,
@@ -529,20 +527,19 @@ local function activateAI(character)
 				stuckPos = root.Position
 			end
 
-			-- NEW: Adaptive ray distance based on speed
-			local dynamicRayDist = RAY_DIST + (avgVelocity * 0.5)
+			-- Adaptive ray distance
+			local dynamicRayDist = RAY_DIST + math.min(avgVelocity * 0.3, 8)
 			
-			-- NEW: Dynamic move force based on distance to goal
+			-- Adaptive move force based on distance
 			local distToGoal = (root.Position - currentGoal.Position).Magnitude
+			local currentMoveForce = MOVE_FORCE
 			if distToGoal > 80 then
-				MOVE_FORCE = 32 -- Push harder when far
+				currentMoveForce = 32
 			elseif distToGoal < 20 then
-				MOVE_FORCE = 24 -- More control when close
-			else
-				MOVE_FORCE = 28
+				currentMoveForce = 24
 			end
 
-			-- ENHANCED SENSOR SYSTEM WITH ADDITIONS
+			-- SENSOR SYSTEM
 			local function getFeatures(pos, dir)
 				local dist = (pos - currentGoal.Position).Magnitude
 				local toGoal = (currentGoal.Position - pos).Unit
@@ -560,8 +557,8 @@ local function activateAI(character)
 					successAngle = dir:Dot(successDir)
 				end
 				
-				-- NEW: Altitude awareness
-				local goalHeight = (currentGoal.Position.Y - pos.Y) / 10 -- Normalized
+				-- Altitude awareness
+				local goalHeight = math.clamp((currentGoal.Position.Y - pos.Y) / 10, -2, 2)
 				local onGround = humanoid.FloorMaterial ~= Enum.Material.Air
 				
 				local goalBehind = goalAngle < -0.7 and 1 or 0
@@ -577,17 +574,17 @@ local function activateAI(character)
 					return res and (1 - (res.Distance / dynamicRayDist)) or 0
 				end
 				
-				-- NEW: Direct line of sight check (corner cutting)
+				-- Direct line of sight (corner cutting)
 				local directToGoal = (currentGoal.Position - pos).Unit
-				local directRay = workspace:Raycast(pos, directToGoal * dynamicRayDist, rayParams)
-				local canSeeGoal = not directRay or directRay.Distance > dist * 0.8
+				local directRay = workspace:Raycast(pos, directToGoal * math.min(dynamicRayDist, dist * 0.9), rayParams)
+				local canSeeGoal = not directRay or directRay.Distance > dist * 0.7
 				
 				local isDangerous, dangerScore = isDangerousPath(pos, currentGoal.Position)
 				
 				local clearLeft = cast(math.rad(-45)) < 0.25 and 1 or 0
 				local clearRight = cast(math.rad(45)) < 0.25 and 1 or 0
 				
-				-- NEW: Jump detection
+				-- Jump detection
 				local frontRay = workspace:Raycast(pos, dir * 8, rayParams)
 				local shouldJump = frontRay and frontRay.Position.Y > pos.Y + 2 and onGround
 				
@@ -605,33 +602,33 @@ local function activateAI(character)
 					wallFarRight = cast(math.rad(60)),
 					clearLeft = clearLeft,
 					clearRight = clearRight,
-					dangerPenalty = math.min(dangerScore, 3),
+					dangerPenalty = math.min(dangerScore * 0.7, 2.5),
 					momentum = avgVelocity / 22,
-					goalHeight = goalHeight, -- NEW
-					canSeeGoal = canSeeGoal and 1 or 0, -- NEW
-					needsJump = shouldJump and 1 or 0 -- NEW
+					goalHeight = goalHeight,
+					canSeeGoal = canSeeGoal and 1 or 0,
+					needsJump = shouldJump and 1 or 0
 				}
 			end
 			
-			-- Enhanced weights with additions
+			-- Balanced weights (less aggressive features)
 			local weights = {
-				goalDist = 3.8,
-				goalAngle = 3.2,
-				pathAngle = 3.0,
-				successAngle = 2.5,
+				goalDist = 4.0,
+				goalAngle = 3.5,
+				pathAngle = 2.8,
+				successAngle = 2.2,
 				goalBehind = -6.0,
-				wallFront = -14.0,
+				wallFront = -12.0,
 				wallLeft = -1.5,
 				wallRight = -1.5,
 				wallFarLeft = -0.5,
 				wallFarRight = -0.5,
-				clearLeft = 6.0,
-				clearRight = 6.0,
-				dangerPenalty = -8.0,
-				momentum = 1.5,
-				goalHeight = 2.0, -- NEW
-				canSeeGoal = 10.0, -- NEW: Major boost for direct routes
-				needsJump = 8.0 -- NEW
+				clearLeft = 5.5,
+				clearRight = 5.5,
+				dangerPenalty = -6.0,
+				momentum = 1.2,
+				goalHeight = 1.5,
+				canSeeGoal = 7.0,
+				needsJump = 6.0
 			}
 
 			local actions = {"forward", "left", "right", "sharp_left", "sharp_right", "slight_left", "slight_right"}
@@ -686,12 +683,12 @@ local function activateAI(character)
 					end
 				end
 				
-				-- NEW: Corner cutting bonus
+				-- Corner cutting bonus (reduced impact)
 				if feat.canSeeGoal > 0 and action == "forward" then
-					q = q + 8.0
+					q = q + 6.0
 				end
 				
-				-- NEW: Momentum preservation penalty
+				-- Momentum preservation (reduced penalty)
 				local turnAngle = 0
 				if action:find("sharp") then 
 					turnAngle = 70 
@@ -699,7 +696,7 @@ local function activateAI(character)
 					turnAngle = 30 
 				end
 				local momentumLoss = (turnAngle / 90) * avgVelocity
-				q = q - momentumLoss * 0.5
+				q = q - momentumLoss * 0.3
 				
 				-- Apply all feature weights
 				for k, v in pairs(feat) do
@@ -708,7 +705,7 @@ local function activateAI(character)
 				
 				-- Forward bias when path is clear
 				if (action == "forward" or action == "slight_left" or action == "slight_right") and feat.goalBehind < 1 then
-					q = q + 2.5
+					q = q + 3.0
 				end
 				
 				if q > maxQ then
@@ -732,7 +729,7 @@ local function activateAI(character)
 				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(-55), 0)
 			end
 			
-			bodyVel.Velocity = root.CFrame.LookVector * MOVE_FORCE
+			bodyVel.Velocity = root.CFrame.LookVector * currentMoveForce
 			humanoid:Move(root.CFrame.LookVector, false)
 			
 			lastPosition = root.Position
@@ -743,4 +740,4 @@ end
 player.CharacterAdded:Connect(activateAI)
 if player.Character then activateAI(player.Character) end
 
-print("🤖 AI Master Enhanced V2: New Features Addedfor
+print("ðŸ¤– AI Master - Optimized Merge: All Features + Reliable Goal-Seeking!")
